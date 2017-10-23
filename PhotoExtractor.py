@@ -294,17 +294,18 @@ class PhotoExtractor:
         hough_lines = cv2.HoughLines(img_segments, rho_step, theta_step, threshold_hough_votes)
         hough_lines = hough_lines.reshape(-1, 2)
 
-        img_hough = img_ref.copy()
-        self.printHoughLines(img_hough, hough_lines, show=show)
 
         if ( show ):
+            img_hough = img_ref.copy()
+            self.printHoughLines(img_hough, hough_lines, show=show)
             print(hough_lines.size)
 
-        return hough_lines, img_hough
+        return hough_lines
 
     # Important for avoiding inside photo
     # Clean hough lines
-    def cleanHoughLines(self, hough_lines, img_ref, photo_size_w, photo_size_h, photo_margin_size=10, threshold_grades=0.02, show=False, dont_clean = False):
+    def cleanHoughLines(self, hough_lines, img_ref, photo_size_w, photo_size_h,
+        photo_margin_size=10, threshold_grades=0.02, show=False, dont_clean = False):
         # Find parallels
         parallels = []
 
@@ -350,7 +351,7 @@ class PhotoExtractor:
             print(perpendiculars.size)
             imshow(img_hough_clean)
 
-        return parallels, perpendiculars
+        return parallels, perpendiculars, img_hough_clean
 
     def createRectangles(self, perpendiculars, img_ref, show=False):
         img_rect = img_ref.copy()
@@ -443,11 +444,11 @@ class PhotoExtractor:
 
             # Hough
 
-            hough_lines, img_hough = self.getHoughLines(img_segments,
+            hough_lines = self.getHoughLines(img_segments,
                     img_roi, threshold_hough_votes=self.threshold_hough_votes_photo, rho_step=self.rho_step, theta_step=self.theta_step, show=self.show)
 
             # Rect
-            parallels, perpendiculars = self.cleanHoughLines(hough_lines, img_roi,
+            parallels, perpendiculars, img_hough = self.cleanHoughLines(hough_lines, img_roi,
                     self.photo_size_w, self.photo_size_h, photo_margin_size=8, threshold_grades=self.threshold_grades, show=self.show,
                     dont_clean = False)
 
@@ -498,11 +499,11 @@ class PhotoExtractor:
             threshold_line_size=self.threshold_line_size, kernel_dilate=np.ones((7, 7)),
             show=self.show)
 
-        self.hough_lines, self.img_hough = self.getHoughLines(self.img_segments,
+        self.hough_lines = self.getHoughLines(self.img_segments,
             self.img_scale,threshold_hough_votes=self.threshold_hough_votes, rho_step=self.rho_step,
             theta_step=self.theta_step, show=self.show)
 
-        self.parallels, self.perpendiculars = self.cleanHoughLines(self.hough_lines,
+        self.parallels, self.perpendiculars, self.img_hough = self.cleanHoughLines(self.hough_lines,
             self.img_scale, self.photo_size_w, self.photo_size_h, photo_margin_size=self.photo_margin_size,
             threshold_grades=self.threshold_grades, show=self.show, dont_clean=False)
 
