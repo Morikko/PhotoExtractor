@@ -210,7 +210,6 @@ class PhotoExtractor:
 
     def __init__(self, show=False):
         self.show = show
-        
 
     def select_image(self, image_url, scan_format="a3", photo_format=""):
         # Read
@@ -230,7 +229,7 @@ class PhotoExtractor:
         self.photo_size_h = round(1590/self.ratio)
         self.threshold_line_size = 40
         self.threshold_hough_votes = 700
-        self.threshold_hough_votes_photo = 230
+        self.threshold_hough_votes_photo = 210
         self.rho_step = 1
         self.theta_step = np.pi/180
         self.photo_margin_size = 10
@@ -425,47 +424,46 @@ class PhotoExtractor:
     def extract_photos(self, write=True, show=False):
         assert ( self.img_rois.size > 0 ), "No subimages to extract, do prepare_scan() before or check why no subimages are found"
 
-        i=0
         ind_photo = 1
-        self.photos_segments = [None] * self.img_rois.size
-        self.photos_img_segments = [None] * self.img_rois.size
-        self.photos_hough_lines = [None] * self.img_rois.size
-        self.photos_img_hough = [None] * self.img_rois.size
-        self.photos_parallels = [None] * self.img_rois.size
-        self.photos_perpendiculars = [None] * self.img_rois.size
-        self.photos_rectangles = [None] * self.img_rois.size
-        self.photos_img_rect = [None] * self.img_rois.size
+        self.photos_segments = []
+        self.photos_img_segments = []
+        self.photos_hough_lines = []
+        self.photos_img_hough = []
+        self.photos_parallels = []
+        self.photos_perpendiculars = []
+        self.photos_rectangles = []
+        self.photos_img_rect = []
 
         for img_roi in self.img_rois:
 
             # Line
-            self.photos_segments[i], self.photos_img_segments[i] =                 self.getSegmentsInImage(img_roi,
+            segments, img_segments =  self.getSegmentsInImage(img_roi,
                     threshold_line_size=self.threshold_line_size,
                     kernel_dilate=np.ones((4, 4)), show=self.show)
 
             # Hough
 
-            self.photos_hough_lines[i], self.photos_img_hough[i] =                self.getHoughLines(self.photos_img_segments[i],
+            hough_lines, img_hough = self.getHoughLines(img_segments,
                     img_roi, threshold_hough_votes=self.threshold_hough_votes_photo, rho_step=self.rho_step, theta_step=self.theta_step, show=self.show)
 
             # Rect
-            self.photos_parallels[i], self.photos_perpendiculars[i] =                self.cleanHoughLines(self.photos_hough_lines[i], img_roi,
+            parallels, perpendiculars = self.cleanHoughLines(hough_lines, img_roi,
                     self.photo_size_w, self.photo_size_h, photo_margin_size=8, threshold_grades=self.threshold_grades, show=self.show,
                     dont_clean = False)
 
-            self.photos_rectangles[i], self.photos_img_rect[i] =                self.createRectangles(self.photos_perpendiculars[i], img_roi,
+            rectangles, img_rect = self.createRectangles(perpendiculars, img_roi,
                     show=self.show)
 
             # Selection of smaller one
-            best_rect = keepSmallerRect( self.photos_rectangles[i],
+            best_rect = keepSmallerRect( rectangles,
                 round(self.photo_size_w/2), round(self.photo_size_h/2) )
 
-            self.photos_img_rect[i] = img_roi.copy()
+            img_rect = img_roi.copy()
             if len(best_rect) > 3:
                 col = (random.randint(0, 256),random.randint(0, 256),random.randint(0, 256))
                 for pt in best_rect:
-                    cv2.circle(self.photos_img_rect[i], pt, 20, col, thickness=-1)
-                cv2.rectangle(self.photos_img_rect[i], best_rect[0], best_rect[3], col,
+                    cv2.circle(img_rect, pt, 20, col, thickness=-1)
+                cv2.rectangle(img_rect, best_rect[0], best_rect[3], col,
                     thickness=5)
 
                 # Extract
@@ -482,8 +480,17 @@ class PhotoExtractor:
 
                 if ( show ):
                     print(best_rect)
-                    imshow(self.photos_img_rect[i])
-            i = i + 1
+                    imshow(img_rect)
+
+            # Record steps
+            self.photos_segments.append(segments)
+            self.photos_img_segments.append(img_segments)
+            self.photos_hough_lines.append(hough_lines)
+            self.photos_img_hough.append(img_hough)
+            self.photos_parallels.append(parallels)
+            self.photos_perpendiculars.append(perpendiculars)
+            self.photos_rectangles.append(rectangles)
+            self.photos_img_rect.append(img_rect)
 
 
     def prepare_scan(self):
