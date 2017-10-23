@@ -212,9 +212,30 @@ class PhotoExtractor:
         self.show = show
 
     def select_image(self, image_url, scan_format="a3", photo_format=""):
+        # Clean
+        self.segments = None
+        self.img_segments = None
+        self.hough_lines = None
+        self.parallels = None
+        self.perpendiculars = None
+        self.img_hough = None
+        self.rectangles = None
+        self.img_rect = None
+        self.img_pt_rois = None
+        self.img_rois = None
+
+        self.photos_segments = []
+        self.photos_img_segments = []
+        self.photos_hough_lines = []
+        self.photos_img_hough = []
+        self.photos_parallels = []
+        self.photos_perpendiculars = []
+        self.photos_rectangles = []
+        self.photos_img_rect = []
+
         # Read
         self.img = cv2.imread(image_url)
-        bordersize = 10
+        bordersize = 50
         # Add border for photos touching the side
         self.img = cv2.copyMakeBorder(self.img, top=bordersize, bottom=bordersize,
                           left=bordersize, right=bordersize,
@@ -449,7 +470,7 @@ class PhotoExtractor:
 
             # Rect
             parallels, perpendiculars, img_hough = self.cleanHoughLines(hough_lines, img_roi,
-                    self.photo_size_w, self.photo_size_h, photo_margin_size=8, threshold_grades=self.threshold_grades, show=self.show,
+                    self.photo_size_w, self.photo_size_h, photo_margin_size=20, threshold_grades=self.threshold_grades, show=self.show,
                     dont_clean = False)
 
             rectangles, img_rect = self.createRectangles(perpendiculars, img_roi,
