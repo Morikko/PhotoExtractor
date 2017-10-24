@@ -132,10 +132,10 @@ def getMax( r, ind ):
             maxi = p[ind]
     return maxi
 
-def updateROI(p_rois, p_roi, rect ):
+def updateROI(p_rois, p_roi, rect, max_height, max_width ):
     for i in range(len(p_rois)):
         # TODO auto threshold
-        if ( getDistance( [p_rois[i][POINT][0], p_rois[i][POINT][1], p_roi[0], p_roi[1]] ) < 50 ):
+        if ( getDistance( [p_rois[i][POINT][0], p_rois[i][POINT][1], p_roi[0], p_roi[1]] ) < 100 ):
                 n_x_min = getMin(rect, 0)
                 n_x_max = getMax(rect, 0)
 
@@ -154,6 +154,11 @@ def updateROI(p_rois, p_roi, rect ):
 
                 y_min = min(y_min, n_y_min)
                 y_max = max(y_max, n_y_max)
+
+                if ( x_min < 0 ): x_min = 0
+                if ( y_min < 0 ): y_min = 0
+                if ( x_max > max_width ): x_max = max_width
+                if ( y_max > max_height ): y_max = max_height
 
                 p_rois[i][RECT] = [ (x_min, y_min), (x_min, y_max), (x_max, y_min), (x_max, y_max) ]
                 return
@@ -420,7 +425,7 @@ class PhotoExtractor:
             p_roi2 = round(p_roi2/4)
             p_roi = (p_roi1, p_roi2)
 
-            updateROI(rois, p_roi, r )
+            updateROI(rois, p_roi, r, img_ref.shape[0], img_ref.shape[1] )
 
         img_rois = []
 
