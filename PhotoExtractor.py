@@ -253,13 +253,15 @@ class PhotoExtractor:
         # TODO
         self.photo_size_w = round(2300/self.ratio)
         self.photo_size_h = round(1590/self.ratio)
-        self.threshold_line_size = 40
-        self.threshold_hough_votes = 700
-        self.threshold_hough_votes_photo = 210
+        self.threshold_line_size = 150
+        self.threshold_line_size_photo = 50
+        self.threshold_hough_votes = 300
+        self.threshold_hough_votes_photo = 100
         self.rho_step = 1
         self.theta_step = np.pi/180
         self.photo_margin_size = 10
-        self.threshold_grades = 0.02 # Around 1 grade
+        self.photo_margin_size_photo = 10
+        self.threshold_grades = 0.01 # Around 1 grade
 
 
     def getSegmentsInImage(self, img_scale, threshold_line_size=40, kernel_dilate=np.ones((7, 7)),
@@ -270,6 +272,10 @@ class PhotoExtractor:
         ls = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
         lines = ls.detect(img_gray)
         lines = lines[0]
+
+        if ( lines is None ):
+            return [], np.zeros((img_scale.shape[0], img_scale.shape[1],3), np.uint8)
+
         lines = lines.reshape(-1, 4)
 
         # Sort lines
@@ -318,6 +324,10 @@ class PhotoExtractor:
 
         # Seek lines
         hough_lines = cv2.HoughLines(img_segments, rho_step, theta_step, threshold_hough_votes)
+
+        if ( hough_lines is None ):
+            return np.array([])
+
         hough_lines = hough_lines.reshape(-1, 2)
 
 
@@ -344,8 +354,8 @@ class PhotoExtractor:
                     or (
                         isClose(l1.theta, l2.theta, threshold=threshold_grades)
                         and  (
-                                isClose( abs(l1.rho-l2.rho), photo_size_w , threshold=photo_size_w/photo_margin_size)
-                                or isClose( abs(l1.rho-l2.rho), photo_size_h , threshold=photo_size_h/photo_margin_size) )
+                                isClose( abs(l1.rho-l2.rho), photo_size_w , threshold=photo_margin_size)
+                                or isClose( abs(l1.rho-l2.rho), photo_size_h , threshold=photo_margin_size) )
                        )
                    ):
                     parallels.append([l1,l2])
@@ -360,7 +370,9 @@ class PhotoExtractor:
             p1 = parallels[i]
             for j in range(i, len(parallels)):
                 p2 = parallels[j]
-                if ( isClose( abs( p1[0].theta - p2[0].theta), math.pi/2, threshold=threshold_grades) ):
+                if ( (isClose( abs( p1[0].theta - p2[0].theta), math.pi/2, threshold=threshold_grades))
+                # Not square, only select rectangles
+                and (not isClose( abs( p1[0].rho - p1[1].rho), abs( p2[0].rho - p2[1].rho), threshold=100)) ) :
                     perpendiculars.append([p1,p2])
 
 
@@ -465,7 +477,7 @@ class PhotoExtractor:
 
             # Line
             segments, img_segments =  self.getSegmentsInImage(img_roi,
-                    threshold_line_size=self.threshold_line_size,
+                    threshold_line_size=self.threshold_line_size_photo,
                     kernel_dilate=np.ones((4, 4)), show=self.show)
 
             # Hough
@@ -475,7 +487,7 @@ class PhotoExtractor:
 
             # Rect
             parallels, perpendiculars, img_hough = self.cleanHoughLines(hough_lines, img_roi,
-                    self.photo_size_w, self.photo_size_h, photo_margin_size=20, threshold_grades=self.threshold_grades, show=self.show,
+                    self.photo_size_w, self.photo_size_h, photo_margin_size=self.photo_margin_size_photo, threshold_grades=self.threshold_grades, show=self.show,
                     dont_clean = False)
 
             rectangles, img_rect = self.createRectangles(perpendiculars, img_roi,
