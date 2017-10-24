@@ -42,6 +42,8 @@ def getDistance(line):
     """
     return math.sqrt( math.pow(line[0]-line[2], 2) + math.pow(line[1]-line[3], 2) )
 
+def getDistanceForPoints(p1, p2):
+    return getDistance([p1[0], p1[1], p2[0], p2[1]])
 
 def isClose(val, ref, threshold=0.1):
     """
@@ -115,9 +117,6 @@ def getInterPoint(col, l1, l2 ):
 assert( intersection_bis([1,2], [3,-2], [1, -2], [3,2] ) == (True, (2,0)) )
 assert( intersection_bis([1, -2], [3,2] , [1,2], [3,-2]) == (True, (2,0)) )
 
-POINT = 0
-RECT = 1
-
 def getMin( r, ind ):
     mini = 3333333
     for p in r:
@@ -132,15 +131,17 @@ def getMax( r, ind ):
             maxi = p[ind]
     return maxi
 
-def updateROI(p_rois, p_roi, rect, max_height, max_width ):
+def updateROI(p_rois, p_roi, rect, max_height, max_width, offset=20):
+    POINT = 0
+    RECT = 1
     for i in range(len(p_rois)):
         # TODO auto threshold
         if ( getDistance( [p_rois[i][POINT][0], p_rois[i][POINT][1], p_roi[0], p_roi[1]] ) < 100 ):
-                n_x_min = getMin(rect, 0)
-                n_x_max = getMax(rect, 0)
+                n_x_min = getMin(rect, 0) - offset
+                n_x_max = getMax(rect, 0) + offset
 
-                n_y_min = getMin(rect, 1)
-                n_y_max = getMax(rect, 1)
+                n_y_min = getMin(rect, 1) - offset
+                n_y_max = getMax(rect, 1) + offset
 
                 r = p_rois[i][RECT]
                 x_min = getMin(r, 0)
@@ -171,6 +172,15 @@ def getError(mesure_w, mesure_h, ref_w, ref_h):
     err_h = mesure_h-ref_h
     return err_w*err_w + err_h*err_h
 
+def getRectSize(rect):
+    d = sorted([getDistanceForPoints(rect[0], rect[1])
+        ,getDistanceForPoints(rect[0], rect[2])
+        ,getDistanceForPoints(rect[0], rect[3])])
+
+    # d[2] is the diagonal
+    # width (big), height (small)
+    return d[1], d[0]
+
 def keepSmallerRect( rects, ref_w, ref_h ):
     if ( len(rects) == 0 ):
         return []
@@ -182,7 +192,9 @@ def keepSmallerRect( rects, ref_w, ref_h ):
         y_min = getMin(rect, 1)
         y_max = getMax(rect, 1)
 
-        err = getError(x_max-x_min, y_max-y_min, ref_w, ref_h)
+        big, small = getRectSize(rect)
+
+        err = getError(big, small, ref_w, ref_h)
 
         if ( err < actual_precision ):
             actual_precision = err
@@ -190,7 +202,27 @@ def keepSmallerRect( rects, ref_w, ref_h ):
 
     return smaller_r
 
+def rectsAverage( rects, ref_w, ref_h ):
+    if ( len(rects) == 0 ):
+        return []
+    x_min = 0
+    x_max = 0
+    y_min = 0
+    y_max = 0
 
+    for rect in rects:
+        x_min = x_min + getMin(rect, 0)
+        x_max = x_max + getMax(rect, 0)
+        y_min = y_min + getMin(rect, 1)
+        y_max = y_max + getMax(rect, 1)
+
+    s = len(rects)
+    x_min = round(x_min/s)
+    x_max = round(x_max/s)
+    y_min = round(y_min/s)
+    y_max = round(y_max/s)
+
+    return [ (x_min, y_min), (x_min, y_max), (x_max, y_min), (x_max, y_max) ]
 
 def getROIfromRect( img, r ):
     x_min = getMin(r, 0)
@@ -395,14 +427,31 @@ class PhotoExtractor:
             b = np.zeros(4)
             b[0], pt[0] = getInterPoint( col, l1, l3 )
             b[1], pt[1] = getInterPoint( col, l1, l4 )
-            b[2], pt[2] = getInterPoint( col, l2, l3 )
-            b[3], pt[3] = getInterPoint( col, l2, l4 )
+            b[2], pt[2] = getInterPoint( col, l2, l4 )
+            b[3], pt[3] = getInterPoint( col, l2, l3 )
 
             rectangles.append(pt)
             for i in range(b.size):
                 if ( b[i] ):
                     cv2.circle(img_rect, pt[i], 20, col, thickness=-1)
-            cv2.rectangle(img_rect, pt[0], pt[3], col, thickness=5)
+            #cv2.rectangle(img_rect, pt[0], pt[3], col, thickness=5)
+            cv2.line(img_rect,pt[0],pt[1],col,5)
+            cv2.line(img_rect,pt[1],pt[2],col,5)
+            cv2.line(img_rect,pt[2],pt[3],col,5)
+            cv2.line(img_rect,pt[3],pt[0],col,5)
+
+            # Compute center of rectangle
+            p_roi1 = 0
+            p_roi2 = 0
+            for i in range(4):
+                p_roi1 = p_roi1+ pt[i][0]
+                p_roi2 = p_roi2+ pt[i][1]
+
+            p_roi1 = round(p_roi1/4)
+            p_roi2 = round(p_roi2/4)
+            p_roi = (p_roi1, p_roi2)
+            cv2.circle(img_rect, p_roi, 20, col, thickness=-1)
+
 
         if ( show ):
             imshow(img_rect)
@@ -416,6 +465,7 @@ class PhotoExtractor:
         rois = []
 
         for r in rectangles:
+            # Compute center of rectangle
             p_roi1 = 0
             p_roi2 = 0
             for i in range(4):
@@ -480,7 +530,7 @@ class PhotoExtractor:
                     show=self.show)
 
             # Selection of smaller one
-            best_rect = keepSmallerRect( rectangles, self.photo_size_w, self.photo_size_h )
+            best_rect = rectsAverage( rectangles, self.photo_size_w, self.photo_size_h )
 
             img_final_rect = img_roi.copy()
             if len(best_rect) > 3:
