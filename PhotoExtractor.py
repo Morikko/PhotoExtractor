@@ -166,36 +166,27 @@ def updateROI(p_rois, p_roi, rect, max_height, max_width ):
     # NEW
     p_rois.append( [p_roi, rect] )
 
-def keepSmallerRect( rects, min_w, min_h ):
+def getError(mesure_w, mesure_h, ref_w, ref_h):
+    err_w = mesure_w-ref_w
+    err_h = mesure_h-ref_h
+    return err_w*err_w + err_h*err_h
+
+def keepSmallerRect( rects, ref_w, ref_h ):
     if ( len(rects) == 0 ):
         return []
-    smaller_r = rects[0]
+    actual_precision = 999999999
     for rect in rects:
-        n_x_min = getMin(rect, 0)
-        n_x_max = getMax(rect, 0)
-        n_y_min = getMin(rect, 1)
-        n_y_max = getMax(rect, 1)
 
-        x_min = getMin(smaller_r, 0)
-        x_max = getMax(smaller_r, 0)
-        y_min = getMin(smaller_r, 1)
-        y_max = getMax(smaller_r, 1)
+        x_min = getMin(rect, 0)
+        x_max = getMax(rect, 0)
+        y_min = getMin(rect, 1)
+        y_max = getMax(rect, 1)
 
-        x_min = max(x_min, n_x_min)
-        x_max = min(x_max, n_x_max)
-        y_min = max(y_min, n_y_min)
-        y_max = min(y_max, n_y_max)
+        err = getError(x_max-x_min, y_max-y_min, ref_w, ref_h)
 
-        smaller_r = [ (x_min, y_min), (x_min, y_max), (x_max, y_min), (x_max, y_max) ]
-
-    # Check it is not too small
-    x_min = getMin(smaller_r, 0)
-    x_max = getMax(smaller_r, 0)
-    y_min = getMin(smaller_r, 1)
-    y_max = getMax(smaller_r, 1)
-
-    if ( x_max-x_min < min_w or y_max-y_min < min_h ):
-        return []
+        if ( err < actual_precision ):
+            actual_precision = err
+            smaller_r = [ (x_min, y_min), (x_min, y_max), (x_max, y_min), (x_max, y_max) ]
 
     return smaller_r
 
@@ -330,13 +321,13 @@ class PhotoExtractor:
 
         hough_lines = hough_lines.reshape(-1, 2)
 
+        img_hough = img_ref.copy()
+        self.printHoughLines(img_hough, hough_lines, show=show)
 
         if ( show ):
-            img_hough = img_ref.copy()
-            self.printHoughLines(img_hough, hough_lines, show=show)
             print(hough_lines.size)
 
-        return hough_lines
+        return hough_lines, img_hough
 
     # Important for avoiding inside photo
     # Clean hough lines
@@ -370,7 +361,7 @@ class PhotoExtractor:
             p1 = parallels[i]
             for j in range(i, len(parallels)):
                 p2 = parallels[j]
-                if ( (isClose( abs( p1[0].theta - p2[0].theta), math.pi/2, threshold=threshold_grades))
+                if ( (isClose( abs( p1[0].theta - p2[0].theta), math.pi/2, threshold=threshold_grades) )
                 # Not square, only select rectangles
                 and (not isClose( abs( p1[0].rho - p1[1].rho), abs( p2[0].rho - p2[1].rho), threshold=100)) ) :
                     perpendiculars.append([p1,p2])
@@ -378,10 +369,8 @@ class PhotoExtractor:
 
         perpendiculars = np.array(perpendiculars)
 
-        img_hough_clean = img_ref.copy()
         for per in perpendiculars:
             col = (random.randint(0, 256),random.randint(0, 256),random.randint(0, 256))
-            self.printHoughLines(img_hough_clean, per.flatten(), col=col, show=False)
 
         if ( show ):
             print(parallels.size)
@@ -389,7 +378,7 @@ class PhotoExtractor:
             print(perpendiculars.size)
             imshow(img_hough_clean)
 
-        return parallels, perpendiculars, img_hough_clean
+        return parallels, perpendiculars
 
     def createRectangles(self, perpendiculars, img_ref, show=False):
         img_rect = img_ref.copy()
@@ -444,10 +433,6 @@ class PhotoExtractor:
         for roi in rois:
             img_roi = getROIfromRect( img_ref, roi[1] )
             bordersize=10
-            img_roi = cv2.copyMakeBorder(img_roi, top=bordersize, bottom=bordersize,
-                                  left=bordersize, right=bordersize,
-                                  borderType= cv2.BORDER_CONSTANT,
-                                  value=[255,255,255])
             img_rois.append( img_roi )
 
             col = (random.randint(0, 256),random.randint(0, 256),random.randint(0, 256))
@@ -472,6 +457,7 @@ class PhotoExtractor:
         self.photos_perpendiculars = []
         self.photos_rectangles = []
         self.photos_img_rect = []
+        self.photos_img_final_rect = []
 
         for img_roi in self.img_rois:
 
@@ -482,11 +468,11 @@ class PhotoExtractor:
 
             # Hough
 
-            hough_lines = self.getHoughLines(img_segments,
+            hough_lines, img_hough = self.getHoughLines(img_segments,
                     img_roi, threshold_hough_votes=self.threshold_hough_votes_photo, rho_step=self.rho_step, theta_step=self.theta_step, show=self.show)
 
             # Rect
-            parallels, perpendiculars, img_hough = self.cleanHoughLines(hough_lines, img_roi,
+            parallels, perpendiculars = self.cleanHoughLines(hough_lines, img_roi,
                     self.photo_size_w, self.photo_size_h, photo_margin_size=self.photo_margin_size_photo, threshold_grades=self.threshold_grades, show=self.show,
                     dont_clean = False)
 
@@ -494,15 +480,14 @@ class PhotoExtractor:
                     show=self.show)
 
             # Selection of smaller one
-            best_rect = keepSmallerRect( rectangles,
-                round(self.photo_size_w/2), round(self.photo_size_h/2) )
+            best_rect = keepSmallerRect( rectangles, self.photo_size_w, self.photo_size_h )
 
-            img_rect = img_roi.copy()
+            img_final_rect = img_roi.copy()
             if len(best_rect) > 3:
                 col = (random.randint(0, 256),random.randint(0, 256),random.randint(0, 256))
                 for pt in best_rect:
-                    cv2.circle(img_rect, pt, 20, col, thickness=-1)
-                cv2.rectangle(img_rect, best_rect[0], best_rect[3], col,
+                    cv2.circle(img_final_rect, pt, 20, col, thickness=-1)
+                cv2.rectangle(img_final_rect, best_rect[0], best_rect[3], col,
                     thickness=5)
 
                 # Extract
@@ -515,11 +500,11 @@ class PhotoExtractor:
                 if ( write ):
                     cv2.imwrite("photo_"+ str(ind_photo)+".jpg",
                         img_roi[y_min:y_max, x_min:x_max, :])
-                    ind_photo = ind_photo + 1
 
                 if ( show ):
                     print(best_rect)
                     imshow(img_rect)
+            ind_photo = ind_photo + 1
 
             # Record steps
             self.photos_segments.append(segments)
@@ -530,6 +515,7 @@ class PhotoExtractor:
             self.photos_perpendiculars.append(perpendiculars)
             self.photos_rectangles.append(rectangles)
             self.photos_img_rect.append(img_rect)
+            self.photos_img_final_rect.append(img_final_rect)
 
 
     def prepare_scan(self):
@@ -537,11 +523,11 @@ class PhotoExtractor:
             threshold_line_size=self.threshold_line_size, kernel_dilate=np.ones((7, 7)),
             show=self.show)
 
-        self.hough_lines = self.getHoughLines(self.img_segments,
+        self.hough_lines, self.img_hough = self.getHoughLines(self.img_segments,
             self.img_scale,threshold_hough_votes=self.threshold_hough_votes, rho_step=self.rho_step,
             theta_step=self.theta_step, show=self.show)
 
-        self.parallels, self.perpendiculars, self.img_hough = self.cleanHoughLines(self.hough_lines,
+        self.parallels, self.perpendiculars = self.cleanHoughLines(self.hough_lines,
             self.img_scale, self.photo_size_w, self.photo_size_h, photo_margin_size=self.photo_margin_size,
             threshold_grades=self.threshold_grades, show=self.show, dont_clean=False)
 
